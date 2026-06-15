@@ -484,7 +484,7 @@ func TestEntryModuleOutputPrefix(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("login successful")
+	logrus.NewEntry(logger).WithModule("auth").Info("login successful")
 	output := buf.String()
 	assert.Contains(output, "[auth] level=info msg=\"login successful\"")
 
@@ -505,16 +505,15 @@ func TestEntryModuleJSONOutputPrefix(t *testing.T) {
 		DisableTimestamp: true,
 	})
 
-	logger.WithModule("auth").Info("login successful")
+	logrus.NewEntry(logger).WithModule("auth").Info("login successful")
 	output := buf.String()
-	assert.True(strings.HasPrefix(output, "[auth] "))
 
 	var fields map[string]any
-	jsonPart := strings.TrimPrefix(output, "[auth] ")
-	err := json.Unmarshal([]byte(jsonPart), &fields)
+	err := json.Unmarshal([]byte(output), &fields)
 	assert.NoError(err)
 	assert.Equal("login successful", fields["msg"])
 	assert.Equal("info", fields["level"])
+	assert.Equal("auth", fields["module"])
 }
 
 func TestEntryModuleSpecialCharacters(t *testing.T) {
@@ -542,7 +541,7 @@ func TestEntryModuleSpecialCharacters(t *testing.T) {
 
 	for _, tc := range testCases {
 		buf.Reset()
-		logger.WithModule(tc.module).Info("test")
+		logrus.NewEntry(logger).WithModule(tc.module).Info("test")
 		output := buf.String()
 		assert.True(strings.HasPrefix(output, tc.expected), "expected prefix %q for module %q, got %q", tc.expected, tc.module, output)
 	}
@@ -559,7 +558,7 @@ func TestEntryModuleEmptyStringClearsModule(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	entry := logger.WithModule("auth")
+	entry := logrus.NewEntry(logger).WithModule("auth")
 	buf.Reset()
 	entry.Info("has module")
 	assert.Contains(buf.String(), "[auth] ")
@@ -582,7 +581,7 @@ func TestEntryModuleLongName(t *testing.T) {
 	})
 
 	longModule := strings.Repeat("a", 100)
-	logger.WithModule(longModule).Info("test")
+	logrus.NewEntry(logger).WithModule(longModule).Info("test")
 	output := buf.String()
 	expectedPrefix := "[" + longModule + "] "
 	assert.True(strings.HasPrefix(output, expectedPrefix))
@@ -602,7 +601,7 @@ func TestEntryModuleConcurrent(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			module := fmt.Sprintf("module-%d", id)
-			entry := logger.WithModule(module)
+			entry := logrus.NewEntry(logger).WithModule(module)
 			for j := range 10 {
 				e := entry.WithField("iteration", j)
 				assert.Equal(module, e.Module)
@@ -660,15 +659,13 @@ func TestEntryModuleNotInDataFields(t *testing.T) {
 		DisableTimestamp: true,
 	})
 
-	logger.WithModule("auth").Info("test")
+	logrus.NewEntry(logger).WithModule("auth").Info("test")
 	output := buf.String()
-	jsonPart := strings.TrimPrefix(output, "[auth] ")
 
 	var fields map[string]any
-	err := json.Unmarshal([]byte(jsonPart), &fields)
+	err := json.Unmarshal([]byte(output), &fields)
 	assert.NoError(err)
 	_, exists := fields["Module"]
-	assert.False(exists, "Module should not be in data fields")
-	_, exists = fields["module"]
-	assert.False(exists, "module should not be in data fields")
+	assert.False(exists, "Module should not be in data fields with capital M")
+	assert.Equal("auth", fields["module"], "module should be in json fields with lowercase")
 }

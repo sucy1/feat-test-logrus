@@ -309,15 +309,8 @@ func (entry *Entry) log(level Level, msg string) {
 	newEntry.Level = level
 	newEntry.Message = msg
 
-	if newEntry.Module != "" {
-		if isModuleFiltered(newEntry.Module) {
-			return
-		}
-	} else {
-		initFilterConfig()
-		if filterMode == FilterModeWhitelist {
-			return
-		}
+	if newEntry.Module != "" && isModuleFiltered(newEntry.Module) {
+		return
 	}
 
 	logger.mu.Lock()
@@ -386,8 +379,11 @@ func (entry *Entry) write() {
 	}
 
 	if entry.Module != "" {
-		prefix := "[" + entry.Module + "] "
-		serialized = append([]byte(prefix), serialized...)
+		switch formatter.(type) {
+		case *TextFormatter:
+			prefix := "[" + entry.Module + "] "
+			serialized = append([]byte(prefix), serialized...)
+		}
 	}
 
 	// Re-acquire the lock to serialize writes to the underlying io.Writer.

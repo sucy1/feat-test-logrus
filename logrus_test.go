@@ -798,16 +798,16 @@ func TestModuleFilterWhitelist(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
-	logger.WithModule("user").Info("user message")
-	logger.WithModule("order").Info("order message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("user").Info("user message")
+	NewEntry(logger).WithModule("order").Info("order message")
 	logger.Info("no module message")
 
 	output := buf.String()
 	assert.Contains(t, output, "[auth]")
 	assert.Contains(t, output, "[user]")
 	assert.NotContains(t, output, "[order]")
-	assert.NotContains(t, output, "no module message")
+	assert.Contains(t, output, "no module message")
 }
 
 func TestModuleFilterBlacklist(t *testing.T) {
@@ -823,9 +823,9 @@ func TestModuleFilterBlacklist(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
-	logger.WithModule("debug").Info("debug message")
-	logger.WithModule("verbose").Info("verbose message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("debug").Info("debug message")
+	NewEntry(logger).WithModule("verbose").Info("verbose message")
 	logger.Info("no module message")
 
 	output := buf.String()
@@ -846,7 +846,7 @@ func TestModuleFilterNoEnvVars(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
 	logger.Info("no module message")
 
 	output := buf.String()
@@ -867,8 +867,8 @@ func TestModuleFilterInvalidMode(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
-	logger.WithModule("user").Info("user message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("user").Info("user message")
 
 	output := buf.String()
 	assert.Contains(t, output, "[auth]")
@@ -888,7 +888,7 @@ func TestModuleFilterEmptyModules(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
 
 	output := buf.String()
 	assert.Contains(t, output, "[auth]")
@@ -906,7 +906,7 @@ func TestModuleFilterModeWithoutModules(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
 
 	output := buf.String()
 	assert.Contains(t, output, "[auth]")
@@ -925,8 +925,8 @@ func TestModuleFilterCaseInsensitiveMode(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
-	logger.WithModule("user").Info("user message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("user").Info("user message")
 
 	output := buf.String()
 	assert.Contains(t, output, "[auth]")
@@ -946,9 +946,9 @@ func TestModuleFilterTrimmedModules(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
-	logger.WithModule("user").Info("user message")
-	logger.WithModule("order").Info("order message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("user").Info("user message")
+	NewEntry(logger).WithModule("order").Info("order message")
 
 	output := buf.String()
 	assert.Contains(t, output, "[auth]")
@@ -969,7 +969,7 @@ func TestModuleFilterEmptyEntriesOnly(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("auth message")
+	NewEntry(logger).WithModule("auth").Info("auth message")
 
 	output := buf.String()
 	assert.Contains(t, output, "[auth]")
@@ -997,9 +997,9 @@ func TestModuleFilterConcurrentWithField(t *testing.T) {
 			defer wg.Done()
 			for j := range 20 {
 				if id%2 == 0 {
-					logger.WithModule("auth").WithField("id", id).WithField("iter", j).Info("allowed")
+					NewEntry(logger).WithModule("auth").WithField("id", id).WithField("iter", j).Info("allowed")
 				} else {
-					logger.WithModule("other").WithField("id", id).WithField("iter", j).Info("blocked")
+					NewEntry(logger).WithModule("other").WithField("id", id).WithField("iter", j).Info("blocked")
 				}
 			}
 		}(i)
@@ -1031,7 +1031,7 @@ func TestModuleFilterWithChainedMethods(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	entry := logger.WithModule("auth").WithField("key", "value")
+	entry := NewEntry(logger).WithModule("auth").WithField("key", "value")
 	entry.Info("test message")
 
 	output := buf.String()
@@ -1074,10 +1074,10 @@ func TestModuleFilterWithSpecialCharactersInModuleName(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("my.module").Info("dot module")
-	logger.WithModule("module with space").Info("space module")
-	logger.WithModule("中文模块").Info("chinese module")
-	logger.WithModule("other").Info("other module")
+	NewEntry(logger).WithModule("my.module").Info("dot module")
+	NewEntry(logger).WithModule("module with space").Info("space module")
+	NewEntry(logger).WithModule("中文模块").Info("chinese module")
+	NewEntry(logger).WithModule("other").Info("other module")
 
 	output := buf.String()
 	assert.Contains(t, output, "[my.module]")
@@ -1099,13 +1099,13 @@ func TestModuleFilterConfigReadOnce(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("auth").Info("should appear")
+	NewEntry(logger).WithModule("auth").Info("should appear")
 	assert.Contains(t, buf.String(), "[auth]")
 
 	buf.Reset()
 	t.Setenv("LOG_FILTER_MODULES", "other")
 
-	logger.WithModule("auth").Info("should still appear")
+	NewEntry(logger).WithModule("auth").Info("should still appear")
 	assert.Contains(t, buf.String(), "[auth]")
 }
 
@@ -1122,8 +1122,8 @@ func TestModuleFilterWithEmptyModuleName(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("").Info("empty module")
-	logger.WithModule("auth").Info("auth module")
+	NewEntry(logger).WithModule("").Info("empty module")
+	NewEntry(logger).WithModule("auth").Info("auth module")
 
 	output := buf.String()
 	assert.Contains(t, output, "empty module")
@@ -1141,7 +1141,7 @@ func TestLoggerWithModule(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logger.WithModule("test").Info("logger with module")
+	NewEntry(logger).WithModule("test").Info("logger with module")
 	output := buf.String()
 	assert.Contains(output, "[test] ")
 	assert.Contains(output, "logger with module")

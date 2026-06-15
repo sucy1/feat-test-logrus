@@ -170,7 +170,6 @@ type FieldLogger interface {
 	WithField(key string, value any) *Entry
 	WithFields(fields Fields) *Entry
 	WithError(err error) *Entry
-	WithModule(module string) *Entry
 
 	StdLogger
 
@@ -271,4 +270,10 @@ func ResetFilterConfigForTest() {
 	filterConfigOnce = sync.Once{}
 	filterMode = FilterModeDisabled
 	filterModules = nil
+}
+
+func WithModule(module string) *Entry {
+	entry := std.newEntry()
+	defer std.releaseEntry(entry)
+	return entry.WithModule(module)
 }

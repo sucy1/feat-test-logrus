@@ -113,6 +113,10 @@ func (f *JSONFormatter) Format(entry *Entry) ([]byte, error) {
 		}
 	}
 
+	if entry.Module != "" {
+		data["module"] = entry.Module
+	}
+
 	b := entry.Buffer
 	if b == nil {
 		b = new(bytes.Buffer)
