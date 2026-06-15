@@ -83,6 +83,10 @@ type Entry struct {
 	// Context carries user-provided context for hooks and formatters.
 	Context context.Context
 
+	// Module is the module tag for this entry, set via WithModule.
+	// An empty string means no module tag.
+	Module string
+
 	// err contains internal field-formatting errors.
 	err string
 }
@@ -109,6 +113,7 @@ func (entry *Entry) Dup() *Entry {
 		Data:    maps.Clone(entry.Data),
 		Time:    entry.Time,
 		Context: entry.Context,
+		Module:  entry.Module,
 		err:     entry.err,
 	}
 }
@@ -156,6 +161,7 @@ func (entry *Entry) WithError(err error) *Entry {
 		Data:    data,
 		Time:    entry.Time,
 		Context: entry.Context,
+		Module:  entry.Module,
 		err:     entry.err,
 	}
 }
@@ -167,6 +173,7 @@ func (entry *Entry) WithContext(ctx context.Context) *Entry {
 		Data:    maps.Clone(entry.Data),
 		Time:    entry.Time,
 		Context: ctx,
+		Module:  entry.Module,
 		err:     entry.err,
 	}
 }
@@ -200,7 +207,7 @@ func (entry *Entry) WithFields(fields Fields) *Entry {
 			data[k] = v
 		}
 	}
-	return &Entry{Logger: entry.Logger, Data: data, Time: entry.Time, err: fieldErr, Context: entry.Context}
+	return &Entry{Logger: entry.Logger, Data: data, Time: entry.Time, err: fieldErr, Context: entry.Context, Module: entry.Module}
 }
 
 // WithTime overrides the time of the Entry.
@@ -210,6 +217,21 @@ func (entry *Entry) WithTime(t time.Time) *Entry {
 		Data:    maps.Clone(entry.Data),
 		Time:    t,
 		Context: entry.Context,
+		Module:  entry.Module,
+		err:     entry.err,
+	}
+}
+
+// WithModule sets a module tag on the Entry.
+// The module tag will be prepended to the log output.
+// An empty string clears the module tag.
+func (entry *Entry) WithModule(module string) *Entry {
+	return &Entry{
+		Logger:  entry.Logger,
+		Data:    maps.Clone(entry.Data),
+		Time:    entry.Time,
+		Context: entry.Context,
+		Module:  module,
 		err:     entry.err,
 	}
 }
@@ -287,6 +309,17 @@ func (entry *Entry) log(level Level, msg string) {
 	newEntry.Level = level
 	newEntry.Message = msg
 
+	if newEntry.Module != "" {
+		if isModuleFiltered(newEntry.Module) {
+			return
+		}
+	} else {
+		initFilterConfig()
+		if filterMode == FilterModeWhitelist {
+			return
+		}
+	}
+
 	logger.mu.Lock()
 	reportCaller := logger.ReportCaller
 	bufPool := newEntry.getBufferPool()
@@ -350,6 +383,11 @@ func (entry *Entry) write() {
 	if err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "Failed to format entry:", err)
 		return
+	}
+
+	if entry.Module != "" {
+		prefix := "[" + entry.Module + "] "
+		serialized = append([]byte(prefix), serialized...)
 	}
 
 	// Re-acquire the lock to serialize writes to the underlying io.Writer.

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -782,4 +783,366 @@ func TestSetReportCallerRace(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestModuleFilterWhitelist(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", "auth,user")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+	logger.WithModule("user").Info("user message")
+	logger.WithModule("order").Info("order message")
+	logger.Info("no module message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+	assert.Contains(t, output, "[user]")
+	assert.NotContains(t, output, "[order]")
+	assert.NotContains(t, output, "no module message")
+}
+
+func TestModuleFilterBlacklist(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "blacklist")
+	t.Setenv("LOG_FILTER_MODULES", "debug,verbose")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+	logger.WithModule("debug").Info("debug message")
+	logger.WithModule("verbose").Info("verbose message")
+	logger.Info("no module message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+	assert.Contains(t, output, "no module message")
+	assert.NotContains(t, output, "[debug]")
+	assert.NotContains(t, output, "[verbose]")
+}
+
+func TestModuleFilterNoEnvVars(t *testing.T) {
+	ResetFilterConfigForTest()
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+	logger.Info("no module message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+	assert.Contains(t, output, "no module message")
+}
+
+func TestModuleFilterInvalidMode(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "invalid")
+	t.Setenv("LOG_FILTER_MODULES", "auth")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+	logger.WithModule("user").Info("user message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+	assert.Contains(t, output, "[user]")
+}
+
+func TestModuleFilterEmptyModules(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", "")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+}
+
+func TestModuleFilterModeWithoutModules(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+}
+
+func TestModuleFilterCaseInsensitiveMode(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "WHITELIST")
+	t.Setenv("LOG_FILTER_MODULES", "auth")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+	logger.WithModule("user").Info("user message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+	assert.NotContains(t, output, "[user]")
+}
+
+func TestModuleFilterTrimmedModules(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", " auth , user ")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+	logger.WithModule("user").Info("user message")
+	logger.WithModule("order").Info("order message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+	assert.Contains(t, output, "[user]")
+	assert.NotContains(t, output, "[order]")
+}
+
+func TestModuleFilterEmptyEntriesOnly(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", ",,,")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("auth message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+}
+
+func TestModuleFilterConcurrentWithField(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", "auth")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	var wg sync.WaitGroup
+	n := 50
+
+	for i := range n {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for j := range 20 {
+				if id%2 == 0 {
+					logger.WithModule("auth").WithField("id", id).WithField("iter", j).Info("allowed")
+				} else {
+					logger.WithModule("other").WithField("id", id).WithField("iter", j).Info("blocked")
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	output := buf.String()
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		assert.Contains(t, line, "[auth]", "expected only auth module logs, got: %s", line)
+		assert.NotContains(t, line, "[other]")
+	}
+}
+
+func TestModuleFilterWithChainedMethods(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", "auth")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	entry := logger.WithModule("auth").WithField("key", "value")
+	entry.Info("test message")
+
+	output := buf.String()
+	assert.Contains(t, output, "[auth]")
+	assert.Contains(t, output, "key=value")
+}
+
+func TestModuleFilterPreservesOriginalFormat(t *testing.T) {
+	ResetFilterConfigForTest()
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&JSONFormatter{
+		DisableTimestamp: true,
+	})
+
+	logger.Info("no module")
+	output := buf.String()
+
+	var fields map[string]any
+	err := json.Unmarshal([]byte(output), &fields)
+	require.NoError(t, err)
+	assert.Equal(t, "no module", fields["msg"])
+	assert.Equal(t, "info", fields["level"])
+	_, hasModuleField := fields["module"]
+	assert.False(t, hasModuleField)
+}
+
+func TestModuleFilterWithSpecialCharactersInModuleName(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", "my.module,module with space,中文模块")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("my.module").Info("dot module")
+	logger.WithModule("module with space").Info("space module")
+	logger.WithModule("中文模块").Info("chinese module")
+	logger.WithModule("other").Info("other module")
+
+	output := buf.String()
+	assert.Contains(t, output, "[my.module]")
+	assert.Contains(t, output, "[module with space]")
+	assert.Contains(t, output, "[中文模块]")
+	assert.NotContains(t, output, "[other]")
+}
+
+func TestModuleFilterConfigReadOnce(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "whitelist")
+	t.Setenv("LOG_FILTER_MODULES", "auth")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("should appear")
+	assert.Contains(t, buf.String(), "[auth]")
+
+	buf.Reset()
+	t.Setenv("LOG_FILTER_MODULES", "other")
+
+	logger.WithModule("auth").Info("should still appear")
+	assert.Contains(t, buf.String(), "[auth]")
+}
+
+func TestModuleFilterWithEmptyModuleName(t *testing.T) {
+	ResetFilterConfigForTest()
+	t.Setenv("LOG_FILTER_MODE", "blacklist")
+	t.Setenv("LOG_FILTER_MODULES", "auth")
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("").Info("empty module")
+	logger.WithModule("auth").Info("auth module")
+
+	output := buf.String()
+	assert.Contains(t, output, "empty module")
+	assert.NotContains(t, output, "[auth]")
+}
+
+func TestLoggerWithModule(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	logger := New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("test").Info("logger with module")
+	output := buf.String()
+	assert.Contains(output, "[test] ")
+	assert.Contains(output, "logger with module")
 }

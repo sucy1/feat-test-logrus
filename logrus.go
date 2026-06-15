@@ -4,6 +4,28 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"os"
+	"strings"
+	"sync"
+)
+
+type FilterMode string
+
+const (
+	FilterModeDisabled  FilterMode = ""
+	FilterModeWhitelist FilterMode = "whitelist"
+	FilterModeBlacklist FilterMode = "blacklist"
+)
+
+const (
+	envFilterMode    = "LOG_FILTER_MODE"
+	envFilterModules = "LOG_FILTER_MODULES"
+)
+
+var (
+	filterConfigOnce sync.Once
+	filterMode       FilterMode
+	filterModules    map[string]struct{}
 )
 
 // Fields type, used to pass to [WithFields].
@@ -148,6 +170,7 @@ type FieldLogger interface {
 	WithField(key string, value any) *Entry
 	WithFields(fields Fields) *Entry
 	WithError(err error) *Entry
+	WithModule(module string) *Entry
 
 	StdLogger
 
@@ -180,4 +203,72 @@ type Ext1FieldLogger interface {
 	Tracef(format string, args ...any)
 	Trace(args ...any)
 	Traceln(args ...any)
+}
+
+func initFilterConfig() {
+	filterConfigOnce.Do(func() {
+		mode := os.Getenv(envFilterMode)
+		if mode == "" {
+			filterMode = FilterModeDisabled
+			filterModules = nil
+			return
+		}
+
+		parsedMode := FilterMode(strings.ToLower(strings.TrimSpace(mode)))
+		if parsedMode != FilterModeWhitelist && parsedMode != FilterModeBlacklist {
+			_, _ = fmt.Fprintf(os.Stderr, "logrus: warning: invalid %s value %q, using default (no filtering)\n", envFilterMode, mode)
+			filterMode = FilterModeDisabled
+			filterModules = nil
+			return
+		}
+
+		modulesStr := os.Getenv(envFilterModules)
+		if modulesStr == "" {
+			_, _ = fmt.Fprintf(os.Stderr, "logrus: warning: %s is set but %s is empty, using default (no filtering)\n", envFilterMode, envFilterModules)
+			filterMode = FilterModeDisabled
+			filterModules = nil
+			return
+		}
+
+		modules := strings.Split(modulesStr, ",")
+		filterModules = make(map[string]struct{}, len(modules))
+		for _, m := range modules {
+			trimmed := strings.TrimSpace(m)
+			if trimmed == "" {
+				continue
+			}
+			filterModules[trimmed] = struct{}{}
+		}
+
+		if len(filterModules) == 0 {
+			_, _ = fmt.Fprintf(os.Stderr, "logrus: warning: no valid modules in %s, using default (no filtering)\n", envFilterModules)
+			filterMode = FilterModeDisabled
+			filterModules = nil
+			return
+		}
+
+		filterMode = parsedMode
+	})
+}
+
+func isModuleFiltered(module string) bool {
+	initFilterConfig()
+	if filterMode == FilterModeDisabled || filterModules == nil {
+		return false
+	}
+	_, exists := filterModules[module]
+	switch filterMode {
+	case FilterModeWhitelist:
+		return !exists
+	case FilterModeBlacklist:
+		return exists
+	default:
+		return false
+	}
+}
+
+func ResetFilterConfigForTest() {
+	filterConfigOnce = sync.Once{}
+	filterMode = FilterModeDisabled
+	filterModules = nil
 }

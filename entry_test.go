@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -404,4 +405,270 @@ func TestEntryReentrantLoggingDeadlock(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("deadlock detected: reentrant logging from MarshalJSON blocked for 5 seconds")
 	}
+}
+
+func TestEntryWithModule(t *testing.T) {
+	assert := assert.New(t)
+
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	entry := logrus.NewEntry(logger)
+
+	moduleEntry := entry.WithModule("auth")
+	assert.Equal("auth", moduleEntry.Module)
+	assert.Empty(entry.Module)
+
+	emptyModuleEntry := entry.WithModule("")
+	assert.Empty(emptyModuleEntry.Module)
+}
+
+func TestEntryWithModuleCopiesData(t *testing.T) {
+	assert := assert.New(t)
+
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	parentEntry := logrus.NewEntry(logger).WithField("parentKey", "parentValue")
+
+	childEntry1 := parentEntry.WithModule("module1")
+	childEntry2 := parentEntry.WithModule("module2")
+
+	assert.Equal("module1", childEntry1.Module)
+	assert.Equal("module2", childEntry2.Module)
+	assert.Equal("parentValue", childEntry1.Data["parentKey"])
+	assert.Equal("parentValue", childEntry2.Data["parentKey"])
+	assert.Empty(parentEntry.Module)
+
+	childEntry1.Data["childKey"] = "childValue"
+	val, exists := childEntry1.Data["childKey"]
+	assert.True(exists)
+	assert.Equal("childValue", val)
+
+	_, exists = childEntry2.Data["childKey"]
+	assert.False(exists)
+
+	_, exists = parentEntry.Data["childKey"]
+	assert.False(exists)
+}
+
+func TestEntryWithModulePreservedInChain(t *testing.T) {
+	assert := assert.New(t)
+
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	entry := logrus.NewEntry(logger).WithModule("auth")
+
+	entryWithField := entry.WithField("key", "value")
+	assert.Equal("auth", entryWithField.Module)
+
+	entryWithError := entry.WithError(fmt.Errorf("error"))
+	assert.Equal("auth", entryWithError.Module)
+
+	entryWithContext := entry.WithContext(context.Background())
+	assert.Equal("auth", entryWithContext.Module)
+
+	entryWithTime := entry.WithTime(time.Now())
+	assert.Equal("auth", entryWithTime.Module)
+
+	entryWithFields := entry.WithFields(logrus.Fields{"a": "b", "c": "d"})
+	assert.Equal("auth", entryWithFields.Module)
+}
+
+func TestEntryModuleOutputPrefix(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	logger.WithModule("auth").Info("login successful")
+	output := buf.String()
+	assert.Contains(output, "[auth] level=info msg=\"login successful\"")
+
+	buf.Reset()
+	logger.Info("no module log")
+	output = buf.String()
+	assert.NotContains(output, "[auth]")
+	assert.Contains(output, "level=info msg=\"no module log\"")
+}
+
+func TestEntryModuleJSONOutputPrefix(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.JSONFormatter{
+		DisableTimestamp: true,
+	})
+
+	logger.WithModule("auth").Info("login successful")
+	output := buf.String()
+	assert.True(strings.HasPrefix(output, "[auth] "))
+
+	var fields map[string]any
+	jsonPart := strings.TrimPrefix(output, "[auth] ")
+	err := json.Unmarshal([]byte(jsonPart), &fields)
+	assert.NoError(err)
+	assert.Equal("login successful", fields["msg"])
+	assert.Equal("info", fields["level"])
+}
+
+func TestEntryModuleSpecialCharacters(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	testCases := []struct {
+		module   string
+		expected string
+	}{
+		{"my.module", "[my.module] "},
+		{"my-module", "[my-module] "},
+		{"my_module", "[my_module] "},
+		{"module with spaces", "[module with spaces] "},
+		{"中文模块", "[中文模块] "},
+		{"auth@service", "[auth@service] "},
+	}
+
+	for _, tc := range testCases {
+		buf.Reset()
+		logger.WithModule(tc.module).Info("test")
+		output := buf.String()
+		assert.True(strings.HasPrefix(output, tc.expected), "expected prefix %q for module %q, got %q", tc.expected, tc.module, output)
+	}
+}
+
+func TestEntryModuleEmptyStringClearsModule(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	entry := logger.WithModule("auth")
+	buf.Reset()
+	entry.Info("has module")
+	assert.Contains(buf.String(), "[auth] ")
+
+	entryNoModule := entry.WithModule("")
+	buf.Reset()
+	entryNoModule.Info("no module")
+	assert.NotContains(buf.String(), "[auth] ")
+}
+
+func TestEntryModuleLongName(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+
+	longModule := strings.Repeat("a", 100)
+	logger.WithModule(longModule).Info("test")
+	output := buf.String()
+	expectedPrefix := "[" + longModule + "] "
+	assert.True(strings.HasPrefix(output, expectedPrefix))
+}
+
+func TestEntryModuleConcurrent(t *testing.T) {
+	assert := assert.New(t)
+
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+
+	var wg sync.WaitGroup
+	n := 100
+
+	for i := range n {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			module := fmt.Sprintf("module-%d", id)
+			entry := logger.WithModule(module)
+			for j := range 10 {
+				e := entry.WithField("iteration", j)
+				assert.Equal(module, e.Module)
+				e.Info("concurrent test")
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestEntryModuleDup(t *testing.T) {
+	assert := assert.New(t)
+
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	entry := logrus.NewEntry(logger).WithModule("auth").WithField("key", "value")
+
+	dup := entry.Dup()
+	assert.Equal("auth", dup.Module)
+	assert.Equal("value", dup.Data["key"])
+
+	dup.Module = "other"
+	dup.Data["key"] = "other"
+	assert.Equal("auth", entry.Module)
+	assert.Equal("value", entry.Data["key"])
+}
+
+func TestEntryWithModuleOnGlobalLogger(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	oldOut := logrus.StandardLogger().Out
+	logrus.SetOutput(&buf)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		DisableTimestamp: true,
+		DisableColors:    true,
+	})
+	t.Cleanup(func() {
+		logrus.SetOutput(oldOut)
+	})
+
+	logrus.WithModule("global").Info("global module test")
+	output := buf.String()
+	assert.Contains(output, "[global] ")
+}
+
+func TestEntryModuleNotInDataFields(t *testing.T) {
+	assert := assert.New(t)
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.JSONFormatter{
+		DisableTimestamp: true,
+	})
+
+	logger.WithModule("auth").Info("test")
+	output := buf.String()
+	jsonPart := strings.TrimPrefix(output, "[auth] ")
+
+	var fields map[string]any
+	err := json.Unmarshal([]byte(jsonPart), &fields)
+	assert.NoError(err)
+	_, exists := fields["Module"]
+	assert.False(exists, "Module should not be in data fields")
+	_, exists = fields["module"]
+	assert.False(exists, "module should not be in data fields")
 }

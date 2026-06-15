@@ -109,6 +109,7 @@ func (logger *Logger) newEntry() *Entry {
 
 func (logger *Logger) releaseEntry(entry *Entry) {
 	entry.Data = map[string]any{}
+	entry.Module = ""
 	logger.entryPool.Put(entry)
 }
 
@@ -150,6 +151,15 @@ func (logger *Logger) WithTime(t time.Time) *Entry {
 	entry := logger.newEntry()
 	defer logger.releaseEntry(entry)
 	return entry.WithTime(t)
+}
+
+// WithModule sets a module tag on the log entry.
+// The module tag will be prepended to the log output.
+// An empty string clears the module tag.
+func (logger *Logger) WithModule(module string) *Entry {
+	entry := logger.newEntry()
+	defer logger.releaseEntry(entry)
+	return entry.WithModule(module)
 }
 
 func (logger *Logger) Logf(level Level, format string, args ...any) {
