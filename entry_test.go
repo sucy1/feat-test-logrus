@@ -455,7 +455,7 @@ func TestEntryWithModulePreservedInChain(t *testing.T) {
 
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	entry := logrus.NewEntry(logger).WithModule("auth")
+	entry := logger.WithModule("auth")
 
 	entryWithField := entry.WithField("key", "value")
 	assert.Equal("auth", entryWithField.Module)
@@ -484,7 +484,7 @@ func TestEntryModuleOutputPrefix(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	logrus.NewEntry(logger).WithModule("auth").Info("login successful")
+	logger.WithModule("auth").Info("login successful")
 	output := buf.String()
 	assert.Contains(output, "[auth] level=info msg=\"login successful\"")
 
@@ -505,7 +505,7 @@ func TestEntryModuleJSONOutputPrefix(t *testing.T) {
 		DisableTimestamp: true,
 	})
 
-	logrus.NewEntry(logger).WithModule("auth").Info("login successful")
+	logger.WithModule("auth").Info("login successful")
 	output := buf.String()
 
 	var fields map[string]any
@@ -541,7 +541,7 @@ func TestEntryModuleSpecialCharacters(t *testing.T) {
 
 	for _, tc := range testCases {
 		buf.Reset()
-		logrus.NewEntry(logger).WithModule(tc.module).Info("test")
+		logger.WithModule(tc.module).Info("test")
 		output := buf.String()
 		assert.True(strings.HasPrefix(output, tc.expected), "expected prefix %q for module %q, got %q", tc.expected, tc.module, output)
 	}
@@ -558,7 +558,7 @@ func TestEntryModuleEmptyStringClearsModule(t *testing.T) {
 		DisableColors:    true,
 	})
 
-	entry := logrus.NewEntry(logger).WithModule("auth")
+	entry := logger.WithModule("auth")
 	buf.Reset()
 	entry.Info("has module")
 	assert.Contains(buf.String(), "[auth] ")
@@ -581,7 +581,7 @@ func TestEntryModuleLongName(t *testing.T) {
 	})
 
 	longModule := strings.Repeat("a", 100)
-	logrus.NewEntry(logger).WithModule(longModule).Info("test")
+	logger.WithModule(longModule).Info("test")
 	output := buf.String()
 	expectedPrefix := "[" + longModule + "] "
 	assert.True(strings.HasPrefix(output, expectedPrefix))
@@ -601,7 +601,7 @@ func TestEntryModuleConcurrent(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 			module := fmt.Sprintf("module-%d", id)
-			entry := logrus.NewEntry(logger).WithModule(module)
+			entry := logger.WithModule(module)
 			for j := range 10 {
 				e := entry.WithField("iteration", j)
 				assert.Equal(module, e.Module)
@@ -618,7 +618,7 @@ func TestEntryModuleDup(t *testing.T) {
 
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
-	entry := logrus.NewEntry(logger).WithModule("auth").WithField("key", "value")
+	entry := logger.WithModule("auth").WithField("key", "value")
 
 	dup := entry.Dup()
 	assert.Equal("auth", dup.Module)
@@ -659,7 +659,7 @@ func TestEntryModuleNotInDataFields(t *testing.T) {
 		DisableTimestamp: true,
 	})
 
-	logrus.NewEntry(logger).WithModule("auth").Info("test")
+	logger.WithModule("auth").Info("test")
 	output := buf.String()
 
 	var fields map[string]any

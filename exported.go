@@ -80,6 +80,11 @@ func WithTime(t time.Time) *Entry {
 	return std.WithTime(t)
 }
 
+// WithModule creates an entry from the standard logger and sets a module tag.
+func WithModule(module string) *Entry {
+	return std.WithModule(module)
+}
+
 // Trace logs a message at level [TraceLevel] on the standard logger.
 func Trace(args ...any) {
 	std.Trace(args...)
